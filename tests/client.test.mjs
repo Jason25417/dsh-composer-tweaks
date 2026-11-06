@@ -295,6 +295,16 @@ test('文件与文件夹：取消 / 失败 / 空选择都不插入', async () =>
   assert.equal(added.length, 0);
 });
 
+test('侧栏行左侧：注册子会话树展开器 + 浮层', async () => {
+  const { slotRegistrations } = await loadAndApply();
+  const toggle = slotRegistrations.find((item) => item.id === 'composer-tweaks-session-tree' && item.name === 'sidebar.session.row.leading');
+  assert.ok(toggle, '缺少子会话树展开器注册');
+  assert.equal(toggle.order, 1);
+  const popover = slotRegistrations.find((item) => item.id === 'composer-tweaks-session-tree' && item.name === 'shell.overlay');
+  assert.ok(popover, '缺少子会话树浮层注册');
+  assert.equal(popover.order, 2001);
+});
+
 test('侧栏行左侧：注册 agent 创建标记（未知 session 返回 null）', async () => {
   const { slotRegistrations } = await loadAndApply();
   const entry = slotRegistrations.find((item) => item.id === 'composer-tweaks-agent-mark');

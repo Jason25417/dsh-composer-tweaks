@@ -739,6 +739,20 @@ window.__ModuleLoader__.load({
       `${GENUI_SELECTOR}{display:none!important}`,
 
       '.dmct-toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:2000;max-width:min(560px,80vw);padding:7px 12px;border-radius:var(--dsw-radius-md,8px);background:var(--dsw-alias-tooltip-bg,var(--dsw-alias-label-primary));color:var(--dsw-static-neutral-bluish-00,var(--dsw-alias-bg-layer-1));font:inherit;font-size:12px;line-height:18px;box-shadow:var(--dsw-elevation-panel,0 6px 20px rgba(0,0,0,.18));white-space:pre-line;overflow-wrap:anywhere;pointer-events:none}',
+      '.dmct-tree-toggle{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;padding:0;border:0;border-radius:4px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;flex:none}',
+      '.dmct-tree-toggle:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}',
+      '.dmct-tree-popover{position:fixed;z-index:2100;min-width:240px;max-width:340px;max-height:320px;overflow:auto;padding:6px;border-radius:var(--dsw-radius-lg);background:var(--dsw-alias-bg-layer-1);border:.5px solid var(--dsw-alias-border-l2);box-shadow:var(--dsw-elevation-prominent);font-size:13px;line-height:22px}',
+      '.dmct-tree-head{padding:2px 8px 6px;color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:16px}',
+      '.dmct-tree-node{display:block}',
+      '.dmct-tree-row{display:flex;align-items:center;gap:6px;padding:3px 6px;border-radius:var(--dsw-radius-sm);cursor:pointer;color:var(--dsw-alias-label-primary)}',
+      '.dmct-tree-row:hover{background:var(--dsw-alias-interactive-bg-hover)}',
+      '.dmct-tree-disclosure{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;padding:0;border:0;border-radius:3px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;flex:none}',
+      '.dmct-tree-disclosure[data-open="true"] svg{transform:rotate(90deg)}',
+      '.dmct-tree-space{display:inline-block;width:14px;flex:none}',
+      '.dmct-tree-dot{width:6px;height:6px;border-radius:50%;background:var(--dsw-alias-label-tertiary);flex:none}',
+      '.dmct-tree-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.dmct-tree-badge{margin-left:auto;color:var(--dsw-alias-label-tertiary);font-size:11px}',
+      '.dmct-tree-note{padding:2px 8px;color:var(--dsw-alias-label-tertiary);font-size:12px}',
       '.dmct-agent-mark{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;color:var(--dsw-alias-label-tertiary)}',
       '.dmct-row-action{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;flex:none}',
       '.dmct-row-action:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}',
@@ -785,6 +799,13 @@ window.__ModuleLoader__.load({
       'pick.unavailable': '混合选择器不可用：宿主半没有加载（重开 DSH Desktop 后生效）',
       'pick.fallback': '无法生成引用，已改为插入文本路径',
       'origin.title': 'Agent 创建 · {origin}',
+      'tree.title': '子会话树',
+      'tree.toggle': '{count} 个子会话，点击展开',
+      'tree.expand': '展开 {label} 的下级',
+      'tree.collapse': '收起 {label} 的下级',
+      'tree.loading': '正在读取子会话…',
+      'tree.empty': '没有下级子会话',
+      'tree.running': '运行中',
       'popout.label': '在新窗口打开',
       'popout.failed': '开窗失败',
     };
@@ -818,6 +839,13 @@ window.__ModuleLoader__.load({
       'pick.unavailable': 'Mixed picker unavailable: the Host half is not loaded (restart DSH Desktop)',
       'pick.fallback': 'Reference chips failed; inserted path text instead',
       'origin.title': 'Agent-created · {origin}',
+      'tree.title': 'Subagent tree',
+      'tree.toggle': '{count} subagent(s), click to expand',
+      'tree.expand': 'Expand children of {label}',
+      'tree.collapse': 'Collapse children of {label}',
+      'tree.loading': 'Loading subagents…',
+      'tree.empty': 'No child subagents',
+      'tree.running': 'running',
       'popout.label': 'Open in new window',
       'popout.failed': 'Could not open the window',
     };
@@ -1243,6 +1271,177 @@ window.__ModuleLoader__.load({
             if (disposer !== null) disposer();
           };
         }, `${NS}: session origin mark`);
+
+        /* ---- 侧栏行内子会话树：父会话行左侧 ▸，点开可收起的子智能体树 ----
+           宿主把 origin === "subagent" 的会话从侧栏列表里过滤掉了，也没有「插入子行」
+           的插槽；这里在父会话行左侧放一个箭头，点开一个浮层树（数据来自
+           subagentCatalog 投影），点节点直接在对话区打开子会话。 */
+        const treeStore = (() => {
+          let value = { rootId: '', x: 0, y: 0, expanded: new Set() };
+          const listeners = new Set();
+          const emit = () => {
+            for (const listener of listeners) listener();
+          };
+          return {
+            get: () => value,
+            subscribe: (listener) => {
+              listeners.add(listener);
+              return () => listeners.delete(listener);
+            },
+            open: (rootId, x, y) => {
+              value = { rootId, x, y, expanded: new Set() };
+              emit();
+            },
+            close: () => {
+              if (value.rootId === '') return;
+              value = { rootId: '', x: 0, y: 0, expanded: new Set() };
+              emit();
+            },
+            toggle: (id) => {
+              const next = new Set(value.expanded);
+              if (next.has(id)) next.delete(id);
+              else next.add(id);
+              value = { ...value, expanded: next };
+              emit();
+            },
+          };
+        })();
+        const openChildSession = (target) => {
+          try {
+            ctx.get('uiWorkspace')?.openSession?.(target);
+          } catch {
+            /* 打开失败不致命 */
+          }
+        };
+        const refreshTree = (sessionId) => {
+          try {
+            ctx.get('sessions')?.refreshProjections?.(sessionId);
+          } catch {
+            /* 刷新失败保持原样 */
+          }
+        };
+        const ChevronIcon = () => h('svg', { width: 10, height: 10, viewBox: '0 0 10 10', fill: 'none', 'aria-hidden': true },
+          h('path', { d: 'M3.5 2 7 5l-3.5 3', stroke: 'currentColor', 'stroke-width': 1.3, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+
+        function SessionTreeToggle(props) {
+          const sessionId = props?.sessionId ?? '';
+          const children = props.useSessions((state) => state?.projectionsBySession?.[sessionId]?.values?.subagentCatalog ?? null);
+          if (!Array.isArray(children) || children.length === 0) return null;
+          const label = t('tree.toggle', { count: children.length });
+          return h('button', {
+            type: 'button',
+            className: 'dmct-tree-toggle',
+            title: label,
+            'aria-label': label,
+            onClick: (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              const rect = event.currentTarget.getBoundingClientRect();
+              props.openTree(sessionId, rect.left, rect.bottom + 4);
+            },
+          }, ChevronIcon());
+        }
+
+        function TreeLevel(props) {
+          const parentId = props.parentId;
+          const level = props.level;
+          const catalog = props.useSessions((state) => state?.projectionsBySession?.[parentId]?.values?.subagentCatalog ?? null);
+          const expanded = React.useSyncExternalStore(treeStore.subscribe, () => treeStore.get().expanded, () => treeStore.get().expanded);
+          if (!Array.isArray(catalog)) return h('div', { className: 'dmct-tree-note' }, t('tree.loading'));
+          if (catalog.length === 0) return h('div', { className: 'dmct-tree-note' }, t('tree.empty'));
+          return catalog.map((entry) => h(SessionTreeNode, { key: entry.id, entry, level, useSessions: props.useSessions, expanded, openChild: props.openChild }));
+        }
+
+        function SessionTreeNode(props) {
+          const entry = props.entry ?? {};
+          const id = entry.id;
+          const label = entry.label ?? id;
+          const childCatalog = props.useSessions((state) => state?.projectionsBySession?.[id]?.values?.subagentCatalog ?? null);
+          const expanded = props.expanded.has(id);
+          const canExpand = !Array.isArray(childCatalog) || childCatalog.length > 0;
+          const running = entry.activity === 'running';
+          return h('div', { className: 'dmct-tree-node', role: 'treeitem', 'aria-level': props.level, ...(canExpand ? { 'aria-expanded': expanded } : {}) },
+            h('div', {
+              className: 'dmct-tree-row',
+              onClick: () => {
+                props.openChild(id);
+                treeStore.close();
+              },
+            },
+            canExpand
+              ? h('button', {
+                type: 'button',
+                className: 'dmct-tree-disclosure',
+                'data-open': expanded ? 'true' : 'false',
+                'aria-label': t(expanded ? 'tree.collapse' : 'tree.expand', { label }),
+                onClick: (event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  if (!expanded) refreshTree(id);
+                  treeStore.toggle(id);
+                },
+              }, ChevronIcon())
+              : h('span', { className: 'dmct-tree-space' }),
+            h('span', { className: 'dmct-tree-dot' }),
+            h('span', { className: 'dmct-tree-label' }, label),
+            running ? h('span', { className: 'dmct-tree-badge' }, t('tree.running')) : null),
+            expanded && canExpand ? h(TreeLevel, { parentId: id, level: props.level + 1, useSessions: props.useSessions, openChild: props.openChild }) : null);
+        }
+
+        function SessionTreePopover(props) {
+          const state = React.useSyncExternalStore(treeStore.subscribe, treeStore.get, treeStore.get);
+          React.useEffect(() => {
+            if (state.rootId === '') return undefined;
+            const onKey = (event) => {
+              if (event.key === 'Escape') treeStore.close();
+            };
+            const onDown = (event) => {
+              const box = document.querySelector('.dmct-tree-popover');
+              if (box !== null && event.target instanceof Node && box.contains(event.target)) return;
+              treeStore.close();
+            };
+            document.addEventListener('keydown', onKey);
+            document.addEventListener('pointerdown', onDown, true);
+            return () => {
+              document.removeEventListener('keydown', onKey);
+              document.removeEventListener('pointerdown', onDown, true);
+            };
+          }, [state.rootId]);
+          if (state.rootId === '') return null;
+          return h('div', {
+            className: 'dmct-tree-popover',
+            role: 'dialog',
+            'aria-label': t('tree.title'),
+            style: { left: `${state.x}px`, top: `${state.y}px` },
+          },
+          h('div', { className: 'dmct-tree-head' }, t('tree.title')),
+          h(TreeLevel, { parentId: state.rootId, level: 1, useSessions: props.useSessions, openChild: props.openChild }));
+        }
+
+        ctx.effect(() => {
+          try {
+            return ctx.slots.inject('sidebar.session.row.leading', () => ctx.slots.register({
+              name: 'sidebar.session.row.leading',
+              id: 'composer-tweaks-session-tree',
+              order: 1,
+              inject: () => ({
+                openTree: (sessionId, x, y) => {
+                  refreshTree(sessionId);
+                  treeStore.open(sessionId, x, y);
+                },
+              }),
+            }, SessionTreeToggle));
+          } catch (error) {
+            console.warn(`[${NS}] session tree toggle unavailable:`, error);
+            return () => {};
+          }
+        }, `${NS}: session tree toggle`);
+        ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+          name: 'shell.overlay',
+          id: 'composer-tweaks-session-tree',
+          order: 2001,
+          inject: () => ({ openChild: openChildSession }),
+        }, SessionTreePopover));
 
         /* ---- 每个会话挂载时：隐藏宿主「文件」行；同时作为插件活性探针 ---- */
         function SessionProbe(props) {

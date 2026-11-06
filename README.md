@@ -23,7 +23,11 @@
    `{ sessionId, origin, at }`；本插件 Host 半提供 `GET /api/dsh-session-origin/list`，
    Client 半按 sessionId 渲染图标（运行中的行显示状态点，空闲后才显示该标记，与
    ui-schedule 的时钟标记同一套行为）。
-7. **聊天记录里的用户消息按 Markdown 渲染**（`conversation.user.text.node` 的 `text` 键、
+7. **子会话树**（0.2.3 起）：有子智能体的父会话，在侧栏行左侧显示 ▸；点开浮层树，
+   按 `subagentCatalog` 投影递归展开/收起，点节点直接在对话区打开子会话。
+   （宿主把 `origin === "subagent"` 的会话从侧栏过滤掉了，且没有「插入子行」的插槽，
+   所以用行内箭头 + 浮层树实现，不替换官方侧栏组件。）
+8. **聊天记录里的用户消息按 Markdown 渲染**（`conversation.user.text.node` 的 `text` 键、
    priority 0 替换宿主纯文本渲染器；助手消息宿主本来就会渲染）。
 
 ## 合并说明（0.2.0）
