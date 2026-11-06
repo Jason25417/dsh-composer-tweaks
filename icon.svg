@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="Composer tweaks">
+  <rect x="6" y="12" width="52" height="40" rx="10" fill="#2F9E73"/>
+  <path d="M18 26h28M18 34h18" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="44" cy="42" r="7" fill="#fff"/>
+  <path d="M44 38.5v7M40.5 42h7" stroke="#2F9E73" stroke-width="2.4" stroke-linecap="round"/>
+</svg>

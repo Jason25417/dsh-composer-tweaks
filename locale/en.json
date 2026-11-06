@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Composer tweaks & Markdown",
+    "description": "Hide the GenUI composer button, move the GenUI prompt and the mixed file/folder picker into the plus menu, add a source/view switch, and render user messages as Markdown."
+  }
+}
