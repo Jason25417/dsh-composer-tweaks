@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 
 import {
   PICK_ROUTE,
+  ORIGIN_ROUTE,
   PICK_TITLE,
   MAC_PANEL_SCRIPT,
   parsePanelOutput,
@@ -127,8 +128,40 @@ test('apply：在 connection.fetch 上注册 POST 路由', () => {
     },
   };
   apply(ctx);
-  assert.equal(routes.length, 1);
-  assert.equal(routes[0].path, PICK_ROUTE);
-  assert.deepEqual(routes[0].methods, ['POST']);
-  assert.equal(typeof routes[0].fetch, 'function');
+  assert.equal(routes.length, 2);
+  const pickRoute = routes.find((route) => route.path === PICK_ROUTE);
+  const originRoute = routes.find((route) => route.path === ORIGIN_ROUTE);
+  assert.ok(pickRoute, '缺少选择器路由');
+  assert.deepEqual(pickRoute.methods, ['POST']);
+  assert.equal(typeof pickRoute.fetch, 'function');
+  assert.ok(originRoute, '缺少 Session 来源路由');
+  assert.deepEqual(originRoute.methods, ['GET']);
+});
+
+test('readOrigins：解析标记文件（坏行忽略，同 id 取最后一条）', async () => {
+  const { readOrigins } = await import('../index.js');
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'origin-test-'));
+  const file = path.join(dir, 'session-origin.ndjson');
+  fs.writeFileSync(file, [
+    JSON.stringify({ sessionId: 's1', origin: 'external-bridge', at: 't1' }),
+    'not json',
+    JSON.stringify({ sessionId: 's2', origin: 'session-bridge' }),
+    JSON.stringify({ sessionId: 's1', origin: 'external-bridge', at: 't2' }),
+  ].join('\n'));
+  const items = readOrigins(file);
+  assert.equal(items.length, 2);
+  const s1 = items.find((item) => item.sessionId === 's1');
+  assert.equal(s1.at, 't2');
+  assert.deepEqual(readOrigins(path.join(dir, 'missing.ndjson')), []);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('createOriginHandler：读取函数注入', async () => {
+  const { createOriginHandler } = await import('../index.js');
+  const handler = createOriginHandler(() => [{ sessionId: 's1', origin: 'external-bridge' }]);
+  const body = await (await handler(new Request(`http://localhost${ORIGIN_ROUTE}`))).json();
+  assert.deepEqual(body, { ok: true, items: [{ sessionId: 's1', origin: 'external-bridge' }] });
 });

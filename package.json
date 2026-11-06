@@ -1,7 +1,7 @@
 {
   "name": "@jason25417/dsh-composer-tweaks",
-  "version": "0.2.1",
-  "description": "Composer tweaks for DeepSeek Harness: mixed file/folder picker (macOS NSOpenPanel), GenUI prompt toggle in the plus menu, hidden GenUI button, Markdown source/view switch, user-message Markdown rendering, and the sidebar open-in-new-window row action.",
+  "version": "0.2.2",
+  "description": "Composer tweaks for DeepSeek Harness: mixed file/folder picker (macOS NSOpenPanel), GenUI prompt toggle in the plus menu, hidden GenUI button, Markdown source/view switch, user-message Markdown rendering, sidebar open-in-new-window row action, and an agent-session origin mark.",
   "type": "module",
   "exports": {
     ".": "./index.js",

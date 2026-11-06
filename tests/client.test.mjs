@@ -35,6 +35,8 @@ function reactStub() {
 function installDom() {
   const tags = [];
   globalThis.window = {
+    addEventListener: () => {},
+    removeEventListener: () => {},
     setInterval: () => 1,
     clearInterval: () => {},
     setTimeout: (fn) => {
@@ -291,6 +293,15 @@ test('文件与文件夹：取消 / 失败 / 空选择都不插入', async () =>
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
   assert.equal(added.length, 0);
+});
+
+test('侧栏行左侧：注册 agent 创建标记（未知 session 返回 null）', async () => {
+  const { slotRegistrations } = await loadAndApply();
+  const entry = slotRegistrations.find((item) => item.id === 'composer-tweaks-agent-mark');
+  assert.ok(entry, '缺少 agent 标记注册');
+  assert.equal(entry.name, 'sidebar.session.row.leading');
+  assert.equal(entry.order, 5);
+  assert.equal(entry.component({ sessionId: 'unknown' }), null);
 });
 
 test('侧栏会话行：注册「在新窗口打开」并调 /popout/open', async () => {

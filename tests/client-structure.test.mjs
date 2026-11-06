@@ -65,6 +65,8 @@ async function loadClient({ modeValue = null } = {}) {
   const storageKeys = { reads: [], writes: [] };
 
   globalThis.window = {
+    addEventListener: () => {},
+    removeEventListener: () => {},
     localStorage: {
       value: modeValue,
       getItem(key) {

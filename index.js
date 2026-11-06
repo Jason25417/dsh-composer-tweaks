@@ -20,8 +20,15 @@
  */
 
 import { execFile } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 
 export const PICK_ROUTE = '/api/dsh-composer/pick';
+/** 读取「哪些 Session 是 agent/外部程序创建的」标记（同源 GUI 可调）。 */
+export const ORIGIN_ROUTE = '/api/dsh-session-origin/list';
+/** 与两个 bridge 插件共用同一个标记文件；追加写，读取时忽略坏行。 */
+export const ORIGIN_FILE = join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'session-origin.ndjson');
 export const PICK_TIMEOUT_MS = 10 * 60 * 1000;
 
 /** 面板标题（也作为 NSOpenPanel 的 message 显示）。 */
@@ -141,6 +148,53 @@ export async function pickPaths(options = {}) {
 }
 
 /**
+ * 读取 Session 来源标记：每行一个 `{ sessionId, origin, at }`；坏行忽略。
+ * @param file - 标记文件路径（测试注入用）
+ * @returns 去重后的标记数组（同一 session 取最后一条）
+ */
+export function readOrigins(file = ORIGIN_FILE) {
+  let text = '';
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch {
+    return [];
+  }
+  const byId = new Map();
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed === '') continue;
+    try {
+      const record = JSON.parse(trimmed);
+      if (record !== null && typeof record === 'object' && typeof record.sessionId === 'string' && record.sessionId !== '') {
+        byId.set(record.sessionId, {
+          sessionId: record.sessionId,
+          origin: typeof record.origin === 'string' && record.origin !== '' ? record.origin : 'agent',
+          ...(typeof record.at === 'string' ? { at: record.at } : {}),
+        });
+      }
+    } catch {
+      /* 坏行忽略 */
+    }
+  }
+  return [...byId.values()];
+}
+
+/**
+ * 生成来源标记路由处理器（读取函数可注入，测试用）。
+ * @param read - 返回标记数组的实现，默认 readOrigins
+ * @returns `(request) => Promise<Response>`，回 `{ ok:true, items }`
+ */
+export function createOriginHandler(read = readOrigins) {
+  return async function handleOrigins(_request) {
+    try {
+      return Response.json({ ok: true, items: read() });
+    } catch (error) {
+      return Response.json(failure('origin-read-failed', error instanceof Error ? error.message : String(error)), { status: 500 });
+    }
+  };
+}
+
+/**
  * 生成路由处理器（选择器可注入，测试用假实现，生产用真实 osascript）。
  * @param pick - 打开选择器的实现，默认 `pickPaths`
  * @returns `(request) => Promise<Response>`，回 `{ ok, paths }` 或失败信封
@@ -173,5 +227,11 @@ export function apply(ctx) {
       requestBody: 'buffered',
       fetch: createPickHandler(),
     }), 'composer-tweaks: mixed file/folder picker route');
+    connCtx.effect(() => connection.fetch.register({
+      path: ORIGIN_ROUTE,
+      methods: ['GET'],
+      requestBody: 'none',
+      fetch: createOriginHandler(),
+    }), 'composer-tweaks: session origin route');
   });
 }

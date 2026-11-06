@@ -41,6 +41,9 @@ window.__ModuleLoader__.load({
     const PICK_URL = '/api/dsh-composer/pick';
     /** 宿主 popout-window 插件的路由（侧栏会话行「在新窗口打开」）。 */
     const POPOUT_ROUTE = '/popout/open';
+    /** 哪些 Session 由 agent/外部程序创建（Host 半读 ~/.dsh/session-origin.ndjson）。 */
+    const ORIGIN_URL = '/api/dsh-session-origin/list';
+    const ORIGIN_REFRESH_MS = 20_000;
     const REFRESH_MS = 10_000;
     const TOAST_MS = 3200;
 
@@ -736,6 +739,7 @@ window.__ModuleLoader__.load({
       `${GENUI_SELECTOR}{display:none!important}`,
 
       '.dmct-toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:2000;max-width:min(560px,80vw);padding:7px 12px;border-radius:var(--dsw-radius-md,8px);background:var(--dsw-alias-tooltip-bg,var(--dsw-alias-label-primary));color:var(--dsw-static-neutral-bluish-00,var(--dsw-alias-bg-layer-1));font:inherit;font-size:12px;line-height:18px;box-shadow:var(--dsw-elevation-panel,0 6px 20px rgba(0,0,0,.18));white-space:pre-line;overflow-wrap:anywhere;pointer-events:none}',
+      '.dmct-agent-mark{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;color:var(--dsw-alias-label-tertiary)}',
       '.dmct-row-action{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;flex:none}',
       '.dmct-row-action:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}',
       '.dmct-row-action:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}',
@@ -780,6 +784,7 @@ window.__ModuleLoader__.load({
       'pick.failed': '选择失败：{message}',
       'pick.unavailable': '混合选择器不可用：宿主半没有加载（重开 DSH Desktop 后生效）',
       'pick.fallback': '无法生成引用，已改为插入文本路径',
+      'origin.title': 'Agent 创建 · {origin}',
       'popout.label': '在新窗口打开',
       'popout.failed': '开窗失败',
     };
@@ -812,6 +817,7 @@ window.__ModuleLoader__.load({
       'pick.failed': 'Picker failed: {message}',
       'pick.unavailable': 'Mixed picker unavailable: the Host half is not loaded (restart DSH Desktop)',
       'pick.fallback': 'Reference chips failed; inserted path text instead',
+      'origin.title': 'Agent-created · {origin}',
       'popout.label': 'Open in new window',
       'popout.failed': 'Could not open the window',
     };
@@ -825,6 +831,44 @@ window.__ModuleLoader__.load({
         const t = ctx.locale.bind(NS);
         const state = createGenuiState();
         const toast = createToastStore();
+        /** Session 来源标记：agent/外部程序创建的会话 → 侧栏行左侧小图标。 */
+        const originStore = (() => {
+          let value = {};
+          const listeners = new Set();
+          return {
+            get: () => value,
+            subscribe: (listener) => {
+              listeners.add(listener);
+              return () => listeners.delete(listener);
+            },
+            set: (items) => {
+              const next = {};
+              for (const item of items) {
+                if (item !== null && typeof item === 'object' && typeof item.sessionId === 'string') next[item.sessionId] = item;
+              }
+              value = next;
+              for (const listener of listeners) listener();
+            },
+          };
+        })();
+        const refreshOrigins = () => {
+          fetch(ORIGIN_URL, { cache: 'no-store' })
+            .then((response) => (response.ok ? response.json() : null))
+            .then((payload) => {
+              if (payload !== null && payload.ok === true && Array.isArray(payload.items)) originStore.set(payload.items);
+            })
+            .catch(() => {});
+        };
+        ctx.effect(() => {
+          refreshOrigins();
+          const timer = window.setInterval(refreshOrigins, ORIGIN_REFRESH_MS);
+          const onFocus = () => refreshOrigins();
+          window.addEventListener('focus', onFocus);
+          return () => {
+            window.clearInterval(timer);
+            window.removeEventListener('focus', onFocus);
+          };
+        }, `${NS}: session origins`);
         let picking = false;
 
         ctx.effect(() => () => toast.dispose(), `${NS}: toast lifetime`);
@@ -1160,6 +1204,45 @@ window.__ModuleLoader__.load({
             if (disposer !== null) disposer();
           };
         }, `${NS}: popout row action`);
+
+        /* ---- 侧栏行左侧：agent/外部程序创建的小标记 ---- */
+        function AgentMark(props) {
+          const marked = React.useSyncExternalStore(originStore.subscribe, originStore.get, originStore.get);
+          const sessionId = props?.sessionId ?? '';
+          const mark = typeof sessionId === 'string' ? marked[sessionId] : undefined;
+          if (mark === undefined) return null;
+          const label = t('origin.title', { origin: mark.origin });
+          return h('span', { className: 'dmct-agent-mark', title: label, 'aria-label': label },
+            h('svg', { width: 12, height: 12, viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': true },
+              h('rect', { x: 3, y: 6, width: 10, height: 7, rx: 2, stroke: 'currentColor', 'stroke-width': 1.2 }),
+              h('path', { d: 'M8 6V3.6M6.4 3.2h3.2', stroke: 'currentColor', 'stroke-width': 1.2, 'stroke-linecap': 'round' }),
+              h('circle', { cx: 6.2, cy: 9.6, r: 0.9, fill: 'currentColor' }),
+              h('circle', { cx: 9.8, cy: 9.6, r: 0.9, fill: 'currentColor' })));
+        }
+        ctx.effect(() => {
+          let disposer = null;
+          let timer = null;
+          let attempts = 0;
+          const SLOT = 'sidebar.session.row.leading';
+          const tryRegister = () => {
+            try {
+              disposer = ctx.slots.inject(SLOT, () => ctx.slots.register({
+                name: SLOT,
+                id: 'composer-tweaks-agent-mark',
+                order: 5,
+              }, AgentMark));
+            } catch (error) {
+              attempts += 1;
+              if (attempts <= 50) timer = window.setTimeout(tryRegister, 200);
+              else console.warn(`[${NS}] session row leading slot unavailable:`, error);
+            }
+          };
+          timer = window.setTimeout(tryRegister, 0);
+          return () => {
+            if (timer !== null) window.clearTimeout(timer);
+            if (disposer !== null) disposer();
+          };
+        }, `${NS}: session origin mark`);
 
         /* ---- 每个会话挂载时：隐藏宿主「文件」行；同时作为插件活性探针 ---- */
         function SessionProbe(props) {

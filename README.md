@@ -17,7 +17,13 @@
 5. **Sidebar 会话行「在新窗口打开」**（0.2.1 起接管）：把宿主「置顶」按钮换成开窗按钮，
    点击调 `@local/dsh-popout-window` 的 `POST /popout/open`；置顶动作仍在右键菜单里。
    （原 `@jason25417/dsh-pin-popout` 在 0.2.2 启动时激活失败会拖垮 web boot，已停用。）
-6. **聊天记录里的用户消息按 Markdown 渲染**（`conversation.user.text.node` 的 `text` 键、
+6. **Agent 创建标记**（0.2.2 起）：侧栏会话行左侧显示一个小机器人图标，
+   表示该会话不是手开的，而是 `dsh-external-bridge` / `dsh-session-bridge` 创建的。
+   两个 bridge 在建会话后往 `~/.dsh/session-origin.ndjson` 追加一行
+   `{ sessionId, origin, at }`；本插件 Host 半提供 `GET /api/dsh-session-origin/list`，
+   Client 半按 sessionId 渲染图标（运行中的行显示状态点，空闲后才显示该标记，与
+   ui-schedule 的时钟标记同一套行为）。
+7. **聊天记录里的用户消息按 Markdown 渲染**（`conversation.user.text.node` 的 `text` 键、
    priority 0 替换宿主纯文本渲染器；助手消息宿主本来就会渲染）。
 
 ## 合并说明（0.2.0）
