@@ -3,7 +3,7 @@
 [![test](https://github.com/Jason25417/dsh-composer-tweaks/actions/workflows/test.yml/badge.svg)](https://github.com/Jason25417/dsh-composer-tweaks/actions/workflows/test.yml) [![dsh](https://img.shields.io/badge/dsh-0.2.x-4b8dff)](https://github.com/deepseek-ai/deepseek-harness) [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 
-输入框（composer）的五个小调整。**0.2.0 起合并了原 `dsh-markdown-composer` 的全部功能**，
+输入框（composer）与侧栏行的小调整。**0.2.0 起合并了原 `dsh-markdown-composer` 的全部功能**，
 现在一个 bundle 同时覆盖「输入框微调」和「Markdown 输入/渲染」。
 
 1. **隐藏 GenUI 的输入框小按钮**（`button[aria-label="GenUI prompt"]`）。
@@ -14,7 +14,10 @@
 4. **输入框下方加「源码 / 视图」小开关**（`conversation.composer.dock`，order 2）：
    源码模式在输入框上方铺一块等宽 textarea 写 Markdown，实时写回宿主草稿、⌘/Ctrl+Enter 发送；
    模式记忆在 localStorage（key 沿用 `dsh-markdown-composer.mode`，老用户设置不丢）。
-5. **聊天记录里的用户消息按 Markdown 渲染**（`conversation.user.text.node` 的 `text` 键、
+5. **Sidebar 会话行「在新窗口打开」**（0.2.1 起接管）：把宿主「置顶」按钮换成开窗按钮，
+   点击调 `@local/dsh-popout-window` 的 `POST /popout/open`；置顶动作仍在右键菜单里。
+   （原 `@jason25417/dsh-pin-popout` 在 0.2.2 启动时激活失败会拖垮 web boot，已停用。）
+6. **聊天记录里的用户消息按 Markdown 渲染**（`conversation.user.text.node` 的 `text` 键、
    priority 0 替换宿主纯文本渲染器；助手消息宿主本来就会渲染）。
 
 ## 合并说明（0.2.0）

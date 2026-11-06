@@ -150,8 +150,8 @@ async function loadAndApply({ routes = {}, services = {} } = {}) {
       inject(owner, callback) {
         callback();
       },
-      register(options) {
-        slotRegistrations.push({ ...options });
+      register(options, component) {
+        slotRegistrations.push({ ...options, component });
         return () => {};
       },
     },
@@ -173,6 +173,7 @@ test('样式：隐藏 GenUI 输入框按钮 + Toast 样式', async () => {
   const css = tags[0].textContent;
   assert.match(css, /button\[aria-label="GenUI prompt"\]\{display:none!important\}/);
   assert.match(css, /\.dmct-toast\{/);
+  assert.match(css, /\.dmct-row-action\{/);
 });
 
 test('两个菜单命令都注册：genui-prompt / files-and-folders', async () => {
@@ -290,6 +291,27 @@ test('文件与文件夹：取消 / 失败 / 空选择都不插入', async () =>
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
   assert.equal(added.length, 0);
+});
+
+test('侧栏会话行：注册「在新窗口打开」并调 /popout/open', async () => {
+  const { slotRegistrations, calls } = await loadAndApply({
+    routes: {
+      '/api/dsh-genui/prompt': async () => ({ enabled: false }),
+      '/popout/open': async () => ({ ok: true }),
+    },
+  });
+  const entry = slotRegistrations.find((item) => item.id === 'composer-tweaks-popout');
+  assert.ok(entry, '缺少侧栏行按钮注册');
+  assert.equal(entry.name, 'sidebar.workspaces.session.row.action');
+  assert.equal(entry.order, 200);
+  const element = entry.component({ sessionId: 's1' });
+  assert.equal(element.props.className, 'dmct-row-action');
+  element.props.onClick({ preventDefault() {}, stopPropagation() {} });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const call = calls.find((item) => item.url === '/popout/open');
+  assert.ok(call, '没有请求 /popout/open');
+  assert.equal(call.options.method, 'POST');
+  assert.deepEqual(JSON.parse(call.options.body), { sessionId: 's1' });
 });
 
 test('探针注册在 composer.dock（插件活性可被 Slots 观察到）', async () => {

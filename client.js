@@ -39,6 +39,8 @@ window.__ModuleLoader__.load({
 
     const GENUI_PROMPT_URL = '/api/dsh-genui/prompt';
     const PICK_URL = '/api/dsh-composer/pick';
+    /** 宿主 popout-window 插件的路由（侧栏会话行「在新窗口打开」）。 */
+    const POPOUT_ROUTE = '/popout/open';
     const REFRESH_MS = 10_000;
     const TOAST_MS = 3200;
 
@@ -734,6 +736,10 @@ window.__ModuleLoader__.load({
       `${GENUI_SELECTOR}{display:none!important}`,
 
       '.dmct-toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:2000;max-width:min(560px,80vw);padding:7px 12px;border-radius:var(--dsw-radius-md,8px);background:var(--dsw-alias-tooltip-bg,var(--dsw-alias-label-primary));color:var(--dsw-static-neutral-bluish-00,var(--dsw-alias-bg-layer-1));font:inherit;font-size:12px;line-height:18px;box-shadow:var(--dsw-elevation-panel,0 6px 20px rgba(0,0,0,.18));white-space:pre-line;overflow-wrap:anywhere;pointer-events:none}',
+      '.dmct-row-action{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-tertiary);cursor:pointer;flex:none}',
+      '.dmct-row-action:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}',
+      '.dmct-row-action:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}',
+      'button[aria-label="置顶会话"][data-dmct-hidden="true"],button[aria-label="取消置顶会话"][data-dmct-hidden="true"],button[aria-label="Pin conversation"][data-dmct-hidden="true"],button[aria-label="Unpin conversation"][data-dmct-hidden="true"]{display:none!important}',
     ].join('\n');
 
     /* 合并进同一个 <style>：两组选择器互不重叠，顺序不影响匹配 */
@@ -774,6 +780,8 @@ window.__ModuleLoader__.load({
       'pick.failed': '选择失败：{message}',
       'pick.unavailable': '混合选择器不可用：宿主半没有加载（重开 DSH Desktop 后生效）',
       'pick.fallback': '无法生成引用，已改为插入文本路径',
+      'popout.label': '在新窗口打开',
+      'popout.failed': '开窗失败',
     };
 
     const en = {
@@ -804,6 +812,8 @@ window.__ModuleLoader__.load({
       'pick.failed': 'Picker failed: {message}',
       'pick.unavailable': 'Mixed picker unavailable: the Host half is not loaded (restart DSH Desktop)',
       'pick.fallback': 'Reference chips failed; inserted path text instead',
+      'popout.label': 'Open in new window',
+      'popout.failed': 'Could not open the window',
     };
 
     return {
@@ -1052,6 +1062,104 @@ window.__ModuleLoader__.load({
           order: 2000,
           inject: () => ({ toast }),
         }, ToastOverlay));
+
+        /* ---- 侧栏会话行：把「置顶」按钮换成「在新窗口打开」 ----
+           这段原先由 @jason25417/dsh-pin-popout 提供；它在本机 0.2.2 启动时
+           激活失败曾导致整页 web boot 失败。为保住功能又保证启动，这里用同一
+           个 slot 重实现，且每一步都 try/catch：失败只降级成「没有开窗按钮」，
+           绝不让本插件的 activation 抛错。 */
+        const PIN_LABELS = ['置顶会话', '取消置顶会话', 'Pin conversation', 'Unpin conversation'];
+        const hideShippedPin = () => {
+          try {
+            for (const label of PIN_LABELS) {
+              for (const el of document.querySelectorAll(`button[aria-label="${label}"]`)) {
+                el.setAttribute('data-dmct-hidden', 'true');
+              }
+            }
+          } catch {
+            /* 静默降级 */
+          }
+        };
+        const openInPopoutWindow = async (sessionId) => {
+          if (typeof sessionId !== 'string' || sessionId === '') return;
+          try {
+            const response = await fetch(POPOUT_ROUTE, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ sessionId }),
+            });
+            const payload = await response.json().catch(() => null);
+            if (!response.ok || payload === null || payload.ok !== true) toast.publish('error', t('popout.failed'));
+          } catch {
+            toast.publish('error', t('popout.failed'));
+          }
+        };
+        function PopoutIcon() {
+          return h('svg', { width: 14, height: 14, viewBox: '0 0 16 16', fill: 'none', 'aria-hidden': true },
+            h('path', { d: 'M6.2 3.2H3.6c-.5 0-.9.4-.9.9v8.3c0 .5.4.9.9.9h8.3c.5 0 .9-.4.9-.9V9.8', stroke: 'currentColor', 'stroke-width': 1.2, 'stroke-linecap': 'round' }),
+            h('path', { d: 'M9.4 2.6h4v4', stroke: 'currentColor', 'stroke-width': 1.2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }),
+            h('path', { d: 'M13.2 2.8 7.6 8.4', stroke: 'currentColor', 'stroke-width': 1.2, 'stroke-linecap': 'round' }));
+        }
+        function RowPopoutButton(props) {
+          const sessionId = props?.sessionId ?? props?.id ?? '';
+          return h('button', {
+            type: 'button',
+            className: 'dmct-row-action',
+            'aria-label': t('popout.label'),
+            title: t('popout.label'),
+            onClick: (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              void openInPopoutWindow(sessionId);
+            },
+          }, PopoutIcon());
+        }
+        ctx.effect(() => {
+          if (document.body === null) return () => {};
+          hideShippedPin();
+          let observer = null;
+          let poll = null;
+          try {
+            observer = new MutationObserver(() => hideShippedPin());
+            observer.observe(document.body, { childList: true, subtree: true });
+            poll = window.setInterval(hideShippedPin, 1500);
+          } catch {
+            /* 降级：置顶按钮只是不隐藏 */
+          }
+          return () => {
+            if (observer !== null) observer.disconnect();
+            if (poll !== null) window.clearInterval(poll);
+          };
+        }, `${NS}: hide shipped pin button`);
+        ctx.effect(() => {
+          // 0.2.2 启动时 slot 由 ui-workspace 声明，激活先后在慢机器/多插件时
+          // 可能反过来；inject 抛错就短暂重试，仍不行才降级（保住 activation）。
+          let disposer = null;
+          let timer = null;
+          let attempts = 0;
+          const SLOT = 'sidebar.workspaces.session.row.action';
+          const tryRegister = () => {
+            try {
+              disposer = ctx.slots.inject(SLOT, () => ctx.slots.register({
+                name: SLOT,
+                id: 'composer-tweaks-popout',
+                order: 200,
+              }, RowPopoutButton));
+            } catch (error) {
+              attempts += 1;
+              if (attempts <= 50) {
+                timer = window.setTimeout(tryRegister, 200);
+              } else {
+                console.warn(`[${NS}] popout row action unavailable:`, error);
+              }
+            }
+          };
+          timer = window.setTimeout(tryRegister, 0);
+          return () => {
+            if (timer !== null) window.clearTimeout(timer);
+            if (disposer !== null) disposer();
+          };
+        }, `${NS}: popout row action`);
 
         /* ---- 每个会话挂载时：隐藏宿主「文件」行；同时作为插件活性探针 ---- */
         function SessionProbe(props) {
